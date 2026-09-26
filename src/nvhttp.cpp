@@ -1634,6 +1634,7 @@ namespace nvhttp {
     http_server_t http_server;
 
     // Verify certificates after establishing connection
+    // NO-PAIRING MOD: any client certificate is accepted, so new devices can connect without pairing.
     https_server.verify = [](SSL *ssl) {
       crypto::x509_t x509 {
 #if OPENSSL_VERSION_MAJOR >= 3
@@ -1647,7 +1648,7 @@ namespace nvhttp {
         return 0;
       }
 
-      int verified = 0;
+      int verified = 1;
 
       auto fg = util::fail_guard([&]() {
         char subject_name[256];
@@ -1657,25 +1658,24 @@ namespace nvhttp {
         BOOST_LOG(debug) << subject_name << " -- "sv << (verified ? "verified"sv : "denied"sv);
       });
 
-      std::lock_guard lock {client_auth_mutex()};
-      auto err_str = verify_client_certificate(x509.get());
-      if (err_str) {
-        BOOST_LOG(warning) << "SSL Verification error :: "sv << err_str;
-
-        return verified;
-      }
-
-      // Check if this client is enabled
+      // NO-PAIRING MOD: certificate store and enabled-state checks are skipped.
+      // The friendly name is looked up for display purposes only; unknown devices
+      // fall back to the certificate subject name.
       auto pem = crypto::pem(x509);
-      auto [enabled, client_name] = get_client_status(pem);
-      if (!enabled) {
-        BOOST_LOG(info) << "Client is disabled -- denied"sv;
-        return verified;
+      std::string client_name;
+      {
+        std::lock_guard lock {client_auth_mutex()};
+        auto status = get_client_status(pem);
+        client_name = std::move(status.second);
+      }
+      if (client_name.empty()) {
+        char subject_name[256];
+        X509_NAME_oneline(X509_get_subject_name(x509.get()), subject_name, sizeof(subject_name));
+        client_name = subject_name;
       }
 
-      last_verified_client_cert = pem;
-      last_verified_client_name = client_name;
-      verified = 1;
+      last_verified_client_cert = std::move(pem);
+      last_verified_client_name = std::move(client_name);
 
       return verified;
     };

@@ -799,19 +799,15 @@ namespace system_tray {
       return;
     }
 
+    // NO-TOAST MOD: update icon and tooltip only, no balloon/toast notification on connect.
     tray.notification_title = nullptr;
     tray.notification_text = nullptr;
     tray.notification_cb = nullptr;
     tray.notification_icon = nullptr;
-    tray.icon = tray.allIconPaths[2];
-    tray_update(&tray);
-    tray.icon = tray.allIconPaths[2];
-    tray.notification_title = "Stream Started";
 
     static std::string msg = std::format("Streaming started for {}", app_name);
-    tray.notification_text = msg.c_str();
+    tray.icon = tray.allIconPaths[2];
     tray.tooltip = msg.c_str();
-    tray.notification_icon = tray.allIconPaths[2];
     tray_update(&tray);
   }
 
@@ -821,19 +817,15 @@ namespace system_tray {
       return;
     }
 
+    // NO-TOAST MOD: update icon and tooltip only, no balloon/toast notification on pause.
     tray.notification_title = nullptr;
     tray.notification_text = nullptr;
     tray.notification_cb = nullptr;
     tray.notification_icon = nullptr;
-    tray.icon = tray.allIconPaths[3];
-    tray_update(&tray);
 
     static std::string msg = std::format("Streaming paused for {}", app_name);
     tray.icon = tray.allIconPaths[3];
-    tray.notification_title = "Stream Paused";
-    tray.notification_text = msg.c_str();
     tray.tooltip = msg.c_str();
-    tray.notification_icon = tray.allIconPaths[3];
     tray_update(&tray);
   }
 
@@ -843,18 +835,14 @@ namespace system_tray {
       return;
     }
 
+    // NO-TOAST MOD: update icon and tooltip only, no balloon/toast notification on stop.
     tray.notification_title = nullptr;
     tray.notification_text = nullptr;
     tray.notification_cb = nullptr;
     tray.notification_icon = nullptr;
-    tray.icon = tray.allIconPaths[0];
-    tray_update(&tray);
 
     static std::string msg = std::format("Application {} successfully stopped", app_name);
     tray.icon = tray.allIconPaths[0];
-    tray.notification_icon = tray.allIconPaths[0];
-    tray.notification_title = "Application Stopped";
-    tray.notification_text = msg.c_str();
     tray.tooltip = PROJECT_NAME;
     tray_update(&tray);
   }
