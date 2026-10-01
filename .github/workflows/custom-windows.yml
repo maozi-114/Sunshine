@@ -1,0 +1,16 @@
+   name: Custom Windows Build
+   permissions: {}
+
+   on:
+     workflow_dispatch:
+
+   jobs:
+     build-windows:
+       name: Windows
+       permissions:
+         contents: read
+       uses: ./.github/workflows/ci-windows.yml
+       with:
+         publish_release: 'false'
+         release_commit: 'nopairing-notoast'
+         release_version: 'v0.0.0-custom'
