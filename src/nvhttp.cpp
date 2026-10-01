@@ -1057,7 +1057,7 @@ namespace nvhttp {
 
       auto &stored_sess = sess_it->second;
       stored_sess.async_insert_pin.response = std::monostate {};
-      getservercert(stored_sess, tree, "0000"sv);
+      getservercert(stored_sess, tree, "0000");
       if (stored_sess.failed) {
         map_id_sess.erase(sess_it);
       }
