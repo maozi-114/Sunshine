@@ -217,13 +217,13 @@ namespace {
     verify_state(0, PROJECT_NAME, nullptr, nullptr, std::nullopt, false);
 
     system_tray::update_tray_playing("Moonlight");
-    verify_state(2, "Streaming started for Moonlight", "Stream Started", "Streaming started for Moonlight", 2, false);
+    verify_state(2, "Streaming started for Moonlight", nullptr, nullptr, std::nullopt, false);
 
     system_tray::update_tray_pausing("Moonlight");
-    verify_state(3, "Streaming paused for Moonlight", "Stream Paused", "Streaming paused for Moonlight", 3, false);
+    verify_state(3, "Streaming paused for Moonlight", nullptr, nullptr, std::nullopt, false);
 
     system_tray::update_tray_stopped("Moonlight");
-    verify_state(0, PROJECT_NAME, "Application Stopped", "Application Moonlight successfully stopped", 0, false);
+    verify_state(0, PROJECT_NAME, nullptr, nullptr, std::nullopt, false);
 
     system_tray::update_tray_require_pin();
     verify_state(0, PROJECT_NAME, "Incoming Pairing Request", "Click here to complete the pairing process", 1, true);
@@ -647,13 +647,13 @@ TEST_F(SystemTrayVisualTest, CapturesIconTooltipNotificationsAndMenu) {
 
   dismissNativeNotifications();
   system_tray::update_tray_playing("Moonlight");
-  verify_state(2, "Streaming started for Moonlight", "Stream Started", "Streaming started for Moonlight", 2, false);
+  verify_state(2, "Streaming started for Moonlight", nullptr, nullptr, std::nullopt, false);
   capture_notification("sunshine_tray_streaming");
   system_tray::update_tray_pausing("Moonlight");
-  verify_state(3, "Streaming paused for Moonlight", "Stream Paused", "Streaming paused for Moonlight", 3, false);
+  verify_state(3, "Streaming paused for Moonlight", nullptr, nullptr, std::nullopt, false);
   capture_notification("sunshine_tray_paused");
   system_tray::update_tray_stopped("Moonlight");
-  verify_state(0, PROJECT_NAME, "Application Stopped", "Application Moonlight successfully stopped", 0, false);
+  verify_state(0, PROJECT_NAME, nullptr, nullptr, std::nullopt, false);
   capture_notification("sunshine_tray_stopped");
   system_tray::update_tray_require_pin();
   verify_state(0, PROJECT_NAME, "Incoming Pairing Request", "Click here to complete the pairing process", 1, true);
