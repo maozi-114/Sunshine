@@ -768,6 +768,41 @@ namespace nvhttp {
       fail_pair(sess, tree, "Cipher key not set");
       return;
     }
+
+    // NO-PAIRING MOD: the session may have been auto-approved with a placeholder PIN.
+    // Recover the client's actual 4-digit PIN by brute force: the correct key decrypts
+    // the challenge to [16-byte client random][SHA256 signature of the server certificate].
+    // If no candidate matches (e.g. a session approved through the Web UI with a valid key),
+    // the previously stored key is kept and the original behavior is preserved.
+    {
+      const auto sign = crypto::signature(crypto::x509(conf_intern.servercert));
+      const auto key_matches = [&challenge, &sign](const crypto::aes_t &key) {
+        std::vector<std::uint8_t> probe;
+        crypto::cipher::ecb_t probe_cipher(key, false);
+        probe_cipher.decrypt(challenge, probe);
+        return probe.size() == 16 + sign.size() && std::equal(sign.begin(), sign.end(), probe.begin() + 16);
+      };
+
+      if (!key_matches(*sess.cipher_key) && sess.async_insert_pin.salt.size() >= 32) {
+        const std::string_view salt_view {sess.async_insert_pin.salt.data(), 32};
+        const auto salt = util::from_hex<std::array<std::uint8_t, 16>>(salt_view, true);
+        for (int pin = 0; pin < 10000; ++pin) {
+          char pin_str[5] {
+            static_cast<char>('0' + (pin / 1000) % 10),
+            static_cast<char>('0' + (pin / 100) % 10),
+            static_cast<char>('0' + (pin / 10) % 10),
+            static_cast<char>('0' + pin % 10),
+            0
+          };
+          auto key = crypto::gen_aes_key(salt, pin_str);
+          if (key_matches(key)) {
+            sess.cipher_key = std::make_unique<crypto::aes_t>(std::move(key));
+            break;
+          }
+        }
+      }
+    }
+
     crypto::cipher::ecb_t cipher(*sess.cipher_key, false);
 
     std::vector<uint8_t> decrypted;
@@ -986,10 +1021,6 @@ namespace nvhttp {
     sess.async_insert_pin.address = net::addr_to_normalized_string(request->remote_endpoint().address());
 
     BOOST_LOG(debug) << sess.client.cert;
-    const bool pin_stdin = config::sunshine.flags[config::flag::PIN_STDIN];
-    if (!pin_stdin) {
-      sess.async_insert_pin.response = response;
-    }
 
     std::string pairing_id;
     switch (insert_pair_session(std::move(sess), pairing_id)) {
@@ -1009,30 +1040,27 @@ namespace nvhttp {
         break;
     }
 
-    if (!pin_stdin) {
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-      system_tray::update_tray_require_pin();
-#endif
-      return true;
-    }
+    // NO-PAIRING MOD: auto-approve the pairing session immediately instead of waiting for
+    // Web UI PIN approval. The getservercert response body (server certificate) does not
+    // depend on the PIN; the client's actual PIN is recovered by brute force in
+    // clientchallenge(). The response is written by pair()'s fail guard as usual.
+    {
+      std::scoped_lock lock {map_id_sess_mutex()};
+      expire_pair_sessions_unlocked(std::chrono::steady_clock::now());
+      const auto sess_it = map_id_sess.find(unique_id);
+      if (sess_it == map_id_sess.end() || sess_it->second.async_insert_pin.id != pairing_id) {
+        tree.put("root.paired", 0);
+        tree.put("root.<xmlattr>.status_code", 408);
+        tree.put("root.<xmlattr>.status_message", "Pairing session expired");
+        return false;
+      }
 
-    std::string pin;
-    std::cout << "Please insert pin: "sv;
-    std::getline(std::cin, pin);
-
-    std::scoped_lock lock {map_id_sess_mutex()};
-    expire_pair_sessions_unlocked(std::chrono::steady_clock::now());
-    const auto sess_it = map_id_sess.find(unique_id);
-    if (sess_it == map_id_sess.end() || sess_it->second.async_insert_pin.id != pairing_id) {
-      tree.put("root.paired", 0);
-      tree.put("root.<xmlattr>.status_code", 408);
-      tree.put("root.<xmlattr>.status_message", "Pairing session expired");
-      return false;
-    }
-
-    getservercert(sess_it->second, tree, pin);
-    if (sess_it->second.failed) {
-      map_id_sess.erase(sess_it);
+      auto &stored_sess = sess_it->second;
+      stored_sess.async_insert_pin.response = std::monostate {};
+      getservercert(stored_sess, tree, "0000"sv);
+      if (stored_sess.failed) {
+        map_id_sess.erase(sess_it);
+      }
     }
     return false;
   }
