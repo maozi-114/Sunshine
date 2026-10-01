@@ -775,7 +775,10 @@ namespace nvhttp {
     // If no candidate matches (e.g. a session approved through the Web UI with a valid key),
     // the previously stored key is kept and the original behavior is preserved.
     {
-      const auto sign = crypto::signature(crypto::x509(conf_intern.servercert));
+      // NO-PAIRING MOD: keep the certificate object alive while referencing its signature,
+      // and copy the signature bytes (signature() returns a view into the certificate).
+      const auto x509_cert = crypto::x509(conf_intern.servercert);
+      const std::string sign {crypto::signature(x509_cert)};
       const auto key_matches = [&challenge, &sign](const crypto::aes_t &key) {
         std::vector<std::uint8_t> probe;
         crypto::cipher::ecb_t probe_cipher(key, false);
