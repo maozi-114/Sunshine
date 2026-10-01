@@ -486,21 +486,6 @@ namespace {
       return client_->request("GET", std::string {target})->content.string();
     }
 
-    /**
-     * @brief Wait for a request to enter the pending pairing registry.
-     *
-     * @return The operator-facing pairing identifier, or an empty string on timeout.
-     */
-    static std::string wait_for_pending_pairing() {
-      for (int attempt = 0; attempt < 100; ++attempt) {
-        if (const auto pending = get_pending_pairings(); !pending.empty()) {
-          return pending.front().id;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds {10});
-      }
-      return {};
-    }
-
   private:
     std::unique_ptr<SimpleWeb::Server<SimpleWeb::HTTP>> server_;  ///< Local pairing HTTP server.
     std::unique_ptr<SimpleWeb::Client<SimpleWeb::HTTP>> client_;  ///< Client connected to the local server.
@@ -521,55 +506,12 @@ TEST_F(PairingHttpHandlerTest, ImmediateRequestsReturnExpectedStatus) {
   EXPECT_NE(request("/pair?uniqueid=out-of-order&clientchallenge=00"sv).find("Out of order"), std::string::npos);
 }
 
-TEST_F(PairingHttpHandlerTest, WebApprovalRequestRemainsPendingUntilCancelled) {
-  std::packaged_task<std::string()> request_task {[this]() {
-    return request(server_certificate_target("pending"));
-  }};
-  auto response = request_task.get_future();
-  std::jthread request_thread {std::move(request_task)};
-
-  const auto pairing_id = wait_for_pending_pairing();
-  ASSERT_FALSE(pairing_id.empty());
-  EXPECT_TRUE(cancel_pairing(pairing_id));
-  EXPECT_NE(response.get().find("cancelled by operator"), std::string::npos);
-}
-
-TEST_F(PairingHttpHandlerTest, PinReturnsCompletedHandshakeResult) {
-  for (const bool expected_result : {false, true}) {
-    const auto unique_id = expected_result ? "successful-result"sv : "failed-result"sv;
-    std::packaged_task<std::string()> request_task {[this, unique_id]() {
-      return request(server_certificate_target(unique_id));
-    }};
-    auto client_response = request_task.get_future();
-    std::jthread request_thread {std::move(request_task)};
-
-    const auto pairing_id = wait_for_pending_pairing();
-    ASSERT_FALSE(pairing_id.empty());
-    config::stream.ping_timeout = std::chrono::seconds {2};
-    std::packaged_task<bool()> pin_task {[&pairing_id]() {
-      return pin(pairing_id, "5338", "Test client");
-    }};
-    auto pin_result = pin_task.get_future();
-    std::jthread pin_thread {std::move(pin_task)};
-
-    EXPECT_NE(client_response.get().find("status_code=\"200\""), std::string::npos);
-    EXPECT_TRUE(nvhttp::test_support::complete_pairing(pairing_id, expected_result));
-    EXPECT_EQ(pin_result.get(), expected_result);
-  }
-}
-
-TEST_F(PairingHttpHandlerTest, PinReturnsFalseWhenClientDoesNotCompleteHandshake) {
-  std::packaged_task<std::string()> request_task {[this]() {
-    return request(server_certificate_target("wrong-pin"));
-  }};
-  auto client_response = request_task.get_future();
-  std::jthread request_thread {std::move(request_task)};
-
-  const auto pairing_id = wait_for_pending_pairing();
-  ASSERT_FALSE(pairing_id.empty());
-  config::stream.ping_timeout = std::chrono::milliseconds {50};
-  EXPECT_FALSE(pin(pairing_id, "0000", "Test client"));
-  EXPECT_NE(client_response.get().find("status_code=\"200\""), std::string::npos);
+TEST_F(PairingHttpHandlerTest, GetServerCertRequestIsAutoApproved) {
+  // NO-PAIRING MOD: getservercert requests are approved immediately instead of
+  // remaining pending until an operator approves them in the Web UI.
+  const auto response = request(server_certificate_target("auto-approved"));
+  EXPECT_NE(response.find("status_code=\"200\""), std::string::npos);
+  EXPECT_NE(response.find("plaincert"), std::string::npos);
   EXPECT_TRUE(get_pending_pairings().empty());
 }
 
@@ -596,22 +538,6 @@ TEST_F(PairingHttpHandlerTest, ConsolePinCompletesOrRejectsTheCertificatePhase) 
   const cin_buffer_guard input_guard {input.rdbuf()};
   EXPECT_NE(request(server_certificate_target("console-success")).find("status_code=\"200\""), std::string::npos);
   EXPECT_NE(request(server_certificate_target("console-failure", "00")).find("status_code=\"400\""), std::string::npos);
-}
-
-TEST_F(PairingHttpHandlerTest, ConsolePinReportsSessionExpiration) {
-  config::sunshine.flags[config::flag::PIN_STDIN] = true;
-  gated_input_buffer input;
-  const cin_buffer_guard input_guard {&input};
-  std::packaged_task<std::string()> request_task {[this]() {
-    return request(server_certificate_target("expired"));
-  }};
-  auto response = request_task.get_future();
-  std::jthread request_thread {std::move(request_task)};
-
-  ASSERT_FALSE(wait_for_pending_pairing().empty());
-  expire_pair_sessions(std::chrono::steady_clock::time_point::max());
-  input.release();
-  EXPECT_NE(response.get().find("status_code=\"408\""), std::string::npos);
 }
 
 TEST_F(PairingSessionRegistryTest, PinApprovalTargetsExplicitPairingId) {
