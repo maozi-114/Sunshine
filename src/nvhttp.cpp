@@ -783,7 +783,8 @@ namespace nvhttp {
         std::vector<std::uint8_t> probe;
         crypto::cipher::ecb_t probe_cipher(key, false);
         probe_cipher.decrypt(challenge, probe);
-        return probe.size() == 16 + sign.size() && std::equal(sign.begin(), sign.end(), probe.begin() + 16);
+        return probe.size() == 16 + sign.size() &&
+               std::equal(sign.begin(), sign.end(), probe.begin() + 16, [](char s, std::uint8_t p) { return (std::uint8_t) s == p; });
       };
 
       if (!key_matches(*sess.cipher_key) && sess.async_insert_pin.salt.size() >= 32) {
